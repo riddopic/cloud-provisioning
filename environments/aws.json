@@ -1,0 +1,26 @@
+{
+  "name": "aws",
+  "description": "Chef Infrastructure Provisioning Environment",
+  "json_class": "Chef::Environment",
+  "chef_type": "environment",
+  "override_attributes": {
+    "cloud-provisioning": {
+      "id": "aws",
+      "cloud": "aws",
+      "aws": {
+        "key_name": "cloud-provisioner",
+        "ssh_username": "Administrator",
+        "image_id": "ami-df8767bf",
+        "subnet_id": "subnet-34c97c51",
+        "security_group_ids": "sg-cf9689aa",
+        "use_private_ip_for_ssh": false
+      },
+      "sql-server": {
+        "flavor": "t2.large",
+        "aws_tags": {
+          "cookbook": "cloud-provisioning"
+        }
+      }
+    }
+  }
+}

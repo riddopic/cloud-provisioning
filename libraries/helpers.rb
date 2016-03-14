@@ -1,0 +1,225 @@
+# encoding: UTF-8
+
+require 'openssl'
+require 'fileutils'
+require 'securerandom'
+
+module Cloud
+  #
+  # Helpers Module for general purposes
+  #
+  module Helpers
+    module_function
+
+    # Retrive the common provisioning recipes.
+    #
+    def common_provisioning_recipes(node)
+      default_provisioning_recipes + node['cloud-provisioning']['common_provisioning_recipes']
+    end
+
+    # Retrive the default provisioning recipes.
+    #
+    def default_provisioning_recipes
+      ['cloud-provisioning::pkg_repo_management']
+    end
+
+    # Provisioning Driver Instance
+    #
+    # @param node [Chef::Node] Chef Node object
+    # @return [Cloud::Provisioning::Base] provisioning driver instance
+    def provisioning(node)
+      check_attribute?(node['cloud-provisioning']['driver'], "node['cloud-provisioning']['driver']")
+      @provisioning ||= Cloud::Provisioning.driver(node['cloud-provisioning']['driver'], node)
+    end
+
+    # The current directory PATH from `.chef/knife.rb`
+    #
+    # @return [String] current directory path
+    def current_dir
+      Chef::Config.chef_repo_path
+    end
+
+    # Chef Provisioning directory link
+    #
+    # @return [Bool] True if cluster directory is a link, False if not
+    def provisioning_data_dir_link?
+      File.symlink?(File.join(current_dir, '.chef', 'provisioning-data'))
+    end
+
+    # Chef Provisioning data directory
+    #
+    # @param node [Chef::Node] Chef Node object
+    # @return [String] PATH of the Delivery cluster data directory
+    def provisioning_data_dir(node)
+      File.join(current_dir, '.chef', "provisioning-data-#{chef_provisioning_id(node)}")
+    end
+
+    # Use the Private IP for SSH
+    #
+    # @param node [Chef::Node] Chef Node object
+    # @return [Bool] True if we need to use the private ip for ssh, False if not
+    def use_private_ip_for_ssh(node)
+      check_attribute?(node['cloud-provisioning']['driver'], "node['cloud-provisioning']['driver']")
+      node['cloud-provisioning'][node['cloud-provisioning']['driver']]['use_private_ip_for_ssh']
+    end
+
+    # Get the IP address from the Provisioning Abstraction
+    #
+    # @param node [Chef::Node] Chef Node object
+    # @param machine_node [Chef::Node][Hash] Chef Node or Hash object of the
+    #   machine we would like to get the ipaddress from
+    # @return [String] ip address
+    def get_ip(node, machine_node)
+      machine_node = Chef::Node.json_create(machine_node) if machine_node.class.eql?(Hash)
+      provisioning(node).ipaddress(machine_node)
+    end
+
+    # Extracting the username from the provisioning abstraction
+    #
+    # @param node [Chef::Node] Chef Node object
+    # @return [String] username
+    def username(node)
+      provisioning(node).username
+    end
+
+    # Chef Provisioning ID
+    # If a provisioning id was not provided (via the attribute) we'll generate
+    # a unique cluster id and immediately save it in case the CCR fails.
+    #
+    # @param node [Chef::Node] Chef Node object
+    # @return [String] provisioning id
+    def chef_provisioning_id(node)
+      unless node['cloud-provisioning']['id']
+        node.set['cloud-provisioning']['id'] = "test-#{SecureRandom.hex(3)}"
+        node.save
+      end
+
+      node['cloud-provisioning']['id']
+    end
+
+    # Encrypted Data Bag Secret
+    # Generate or load an existing encrypted data bag secret
+    #
+    # @param node [Chef::Node] Chef Node object
+    # @return [String] encrypted data bag secret
+    def encrypted_data_bag_secret(node)
+      @encrypted_data_bag_secret ||= begin
+        if File.exist?("#{provisioning_data_dir(node)}/encrypted_data_bag_secret")
+          File.read("#{provisioning_data_dir(node)}/encrypted_data_bag_secret")
+        else
+          SecureRandom.base64(512)
+        end
+      end
+    end
+
+    # Generate Knife Variables
+    # To use them to create a new knife config file that will point at the newly
+    # provisioned Chef server to facilitate its management within the
+    # `provisioning_data_dir`
+    #
+    # @param node [Chef::Node] Chef Node object
+    # @return [Hash] knife variables to render a customized knife.rb
+    def knife_variables(node)
+      {
+        chef_server_url: Cloud::Helpers::ChefServer.chef_server_url(node),
+        client_key: "#{provisioning_data_dir(node)}/provisioner.pem",
+        analytics_server_url: if Cloud::Helpers::Analytics.analytics_enabled?(node)
+                                "https://#{Cloud::Helpers::Analytics.analytics_server_fqdn(node)}/organizations" \
+                                "/#{node['cloud-provisioning']['chef-server']['organization']}"
+                              else
+                                ''
+                              end,
+        supermarket_site: if Cloud::Helpers::Supermarket.supermarket_enabled?(node)
+                            "https://#{Cloud::Helpers::Supermarket.supermarket_server_fqdn(node)}"
+                          else
+                            ''
+                          end
+      }
+    end
+
+    # Validate Attribute
+    # As we depend on many attributes for multiple components we need a
+    # quick way to validate when they have been set or not.
+    #
+    # @param attr_value [NotNilValue] value of the attribute we want to check
+    # @param attr_name [String] name of the attribute
+    def check_attribute?(attr_value, attr_name)
+      raise Chef::Exceptions::AttributeNotFound, attr_name if attr_value.nil?
+    end
+
+    # Return a common set of instance tags.
+    #
+    # @param [Strin] chef_type of the instance being tagged
+    # @return [Hash] instance tags
+    def generate_tags(tag = nil)
+      tag = tag ? { chef_type: tag } : nil
+      { 'cookbook' => 'cloud-provisioning',
+        'launched_by' => ENV['USER'],
+        'launched_at' => Time.new.strftime("%A, %d %b %Y %l:%M %p %Z")
+      }.merge(tag)
+    end
+  end
+
+  # Module that exposes multiple helpers
+  module DSL
+    # Retrive the common cluster recipes
+    def common_provisioning_recipes
+      Cloud::Helpers.common_provisioning_recipes(node)
+    end
+
+    # Provisioning Driver Instance
+    def provisioning
+      Cloud::Helpers.provisioning(node)
+    end
+
+    # The current directory PATH
+    def current_dir
+      Cloud::Helpers.current_dir
+    end
+
+    # Cluster Data directory link
+    def provisioning_data_dir_link?
+      Cloud::Helpers.provisioning_data_dir_link?
+    end
+
+    # Chef Provisioning data directory
+    def provisioning_data_dir
+      Cloud::Helpers.provisioning_data_dir(node)
+    end
+
+    # Use the Private IP for SSH
+    def use_private_ip_for_ssh
+      Cloud::Helpers.use_private_ip_for_ssh(node)
+    end
+
+    # Get the IP address from the Provisioning Abstraction
+    def get_ip(machine_node)
+      Cloud::Helpers.get_ip(node, machine_node)
+    end
+
+    # Extracting the username from the provisioning abstraction
+    def username
+      Cloud::Helpers.username(node)
+    end
+
+    # Chef Provisioning ID
+    def chef_provisioning_id
+      Cloud::Helpers.chef_provisioning_id(node)
+    end
+
+    # Encrypted Data Bag Secret
+    def encrypted_data_bag_secret
+      Cloud::Helpers.encrypted_data_bag_secret(node)
+    end
+
+    # Generate Knife Variables
+    def knife_variables
+      Cloud::Helpers.knife_variables(node)
+    end
+
+    # Generate instance tags
+    def generate_tags(tag = nil)
+      Cloud::Helpers.generate_tags(tag)
+    end
+  end
+end

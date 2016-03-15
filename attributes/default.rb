@@ -3,7 +3,7 @@
 default['cloud-provisioning'].tap do |provisioning|
   #
   # Provisioning Driver
-  provisioning['driver'] = nil
+  provisioning['driver'] = 'aws'
   #
   # The Cluster Name which will be use to define all default hostnames
   provisioning['id'] = nil

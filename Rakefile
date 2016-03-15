@@ -370,8 +370,8 @@ namespace :setup do
   end
 
   desc 'Setup a SQL Server'
-  task :chef_server do
-    msg 'Create a Chef Server'
+  task :sql_server do
+    msg 'Create a SQL Server'
     chef_zero 'setup_sql_server'
   end
 end

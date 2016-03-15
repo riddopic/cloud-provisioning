@@ -12,4 +12,4 @@ aws_key_pair 'cloud-provisioner' do
   allow_overwrite true
 end
 
-include_recipe 'cloud-provisioning::setup_sql'
+include_recipe 'cloud-provisioning::setup_sql_server'

@@ -2,7 +2,7 @@
 
 include_recipe 'cloud-provisioning::_settings'
 
-machine sql_server do
+machine sql_server_hostname do
   chef_server lazy {
     {
       chef_server_url: '54.187.211.135',
